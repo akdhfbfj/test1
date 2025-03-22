@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>간단 테트리스 (확장된 칸 폭 & 추가 기능 제안)</title>
+  <style>
+    /* 화면에 캔버스를 가운데 정렬하고 간단한 안내 문구를 배치하기 위한 스타일 */
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0;
+      padding: 20px;
+      font-family: sans-serif;
+    }
+
+    h1 {
+      margin: 10px 0;
+    }
+
+    #gameCanvas {
+      border: 1px solid #000;
+      background-color: #f0f0f0;
+      display: block;
+      margin: 20px auto;
+    }
+
+    #scoreBoard {
+      font-size: 18px;
+      margin: 10px 0;
+    }
+
+    #controls {
+      margin-top: 10px;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <h1>간단 테트리스 (확장된 칸 폭)</h1>
+
+  <!-- 게임 화면을 그릴 캔버스
+       가로 10칸 * 블록크기 24px = 240px
+       세로 20칸 * 블록크기 24px = 480px -->
+  <canvas id="gameCanvas" width="240" height="480"></canvas>
+
+  <!-- 점수와 게임 진행 정보를 보여줄 영역 -->
+  <div id="scoreBoard">점수: <span id="score">0</span></div>
+
+  <!-- 조작 방법 안내 -->
+  <div id="controls">
+    <div>← / → : 좌우 이동</div>
+    <div>↓ : 아래로 빠르게 내리기</div>
+    <div>↑ : 블록 회전</div>
+    <div>Space : 하드드롭(바로 아래로 내리기)</div>
+  </div>
+
+  <script>
+    /*
+      간단한 테트리스 구현 + 라인 삭제 애니메이션 + 점선 안내선
+      (칸의 폭을 늘려 Canvas 너비 전부 사용)
+      
+      주요 변경점:
+      - blockSize를 24로 변경하여 가로 10칸 = 240px, 세로 20칸 = 480px.
+      - Canvas 크기도 240 x 480으로 조정.
+    */
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // 블록 하나의 크기 설정(픽셀)
+    const blockSize = 24; // 24px로 확장
+
+    // 보드 크기 설정
+    const boardWidth = 10;
+    const boardHeight = 20;
+
+    // 보드를 2차원 배열로 표현
+    let board = [];
+    for (let row = 0; row < boardHeight; row++) {
+      board[row] = new Array(boardWidth).fill(0);
+    }
+
+    // 테트로미노 도형
+    const tetrominoes = [
+      // I
+      [
+        [[1, 1, 1, 1],
+         [0, 0, 0, 0],
+         [0, 0, 0, 0],
+         [0, 0, 0, 0]],
+        [[0, 1, 0, 0],
+         [0, 1, 0, 0],
+         [0, 1, 0, 0],
+         [0, 1, 0, 0]],
+        [[1, 1, 1, 1],
+         [0, 0, 0, 0],
+         [0, 0, 0, 0],
+         [0, 0, 0, 0]],
+        [[0, 1, 0, 0],
+         [0, 1, 0, 0],
+         [0, 1, 0, 0],
+         [0, 1, 0, 0]],
+      ],
+      // O
+      [
+        [[1, 1],
+         [1, 1]],
+        [[1, 1],
+         [1, 1]],
+        [[1, 1],
+         [1, 1]],
+        [[1, 1],
+         [1, 1]],
+      ],
+      // T
+      [
+        [[0, 1, 0],
+         [1, 1, 1],
+         [0, 0, 0]],
+        [[0, 1, 0],
+         [0, 1, 1],
+         [0, 1, 0]],
+        [[0, 0, 0],
+         [1, 1, 1],
+         [0, 1, 0]],
+        [[0, 1, 0],
+         [1, 1, 0],
+         [0, 1, 0]],
+      ],
+      // S
+      [
+        [[0, 1, 1],
+         [1, 1, 0],
+         [0, 0, 0]],
+        [[0, 1, 0],
+         [0, 1, 1],
+         [0, 0, 1]],
+        [[0, 0, 0],
+         [0, 1, 1],
+         [1, 1, 0]],
+        [[1, 0, 0],
+         [1, 1, 0],
+         [0, 1, 0]],
+      ],
+      // Z
+      [
+        [[1, 1, 0],
+         [0, 1, 1],
+         [0, 0, 0]],
+        [[0, 0, 1],
+         [0, 1, 1],
+         [0, 1, 0]],
+        [[0, 0, 0],
+         [1, 1, 0],
+         [0, 1, 1]],
+        [[0, 1, 0],
+         [1, 1, 0],
+         [1, 0, 0]],
+      ],
+      // J
+      [
+        [[1, 0, 0],
+         [1, 1, 1],
+         [0, 0, 0]],
+        [[0, 1, 1],
+         [0, 1, 0],
+         [0, 1, 0]],
+        [[0, 0, 0],
+         [1, 1, 1],
+         [0, 0, 1]],
+        [[0, 1, 0],
+         [0, 1, 0],
+         [1, 1, 0]],
+      ],
+      // L
+      [
+        [[0, 0, 1],
+         [1, 1, 1],
+         [0, 0, 0]],
+        [[0, 1, 0],
+         [0, 1, 0],
+         [0, 1, 1]],
+        [[0, 0, 0],
+         [1, 1, 1],
+         [1, 0, 0]],
+        [[1, 1, 0],
+         [0, 1, 0],
+         [0, 1, 0]],
+      ],
+    ];
+
+    // 랜덤 색상 배열
+    const colors = [
+      'red',
+      'blue',
+      'green',
+      'purple',
+      'orange',
+      'cyan',
+      'magenta'
+    ];
+
+    // 현재 조작 중인 테트로미노 정보
+    let currentTetromino;
+    let currentX;
+    let currentY;
+    let currentRotation;
+    let currentColor;
+
+    // 점수 관리
+    let score = 0;
+
+    // 라인 애니메이션 관련 변수
+    let isAnimatingLineRemoval = false;
+    let linesToFlash = [];
+    let blinkState = false;
+
+    // 새 블록 생성
+    function generateNewTetromino() {
+      const randTetrominoIndex = Math.floor(Math.random() * tetrominoes.length);
+      currentTetromino = tetrominoes[randTetrominoIndex];
+      currentRotation = 0;
+      currentX = Math.floor(boardWidth / 2) - 2;
+      currentY = 0;
+      currentColor = colors[randTetrominoIndex];
+    }
+
+    // 보드 그리기
+    function drawBoard() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 이미 쌓인 블록(보드 배열) 그리기
+      for (let row = 0; row < boardHeight; row++) {
+        for (let col = 0; col < boardWidth; col++) {
+          if (board[row][col] !== 0) {
+            let color = board[row][col];
+            if (isAnimatingLineRemoval && linesToFlash.includes(row)) {
+              if (blinkState) {
+                color = 'yellow';
+              }
+            }
+            ctx.fillStyle = color;
+            ctx.fillRect(col * blockSize, row * blockSize, blockSize, blockSize);
+            ctx.strokeRect(col * blockSize, row * blockSize, blockSize, blockSize);
+          }
+        }
+      }
+
+      if (!isAnimatingLineRemoval) {
+        // 1) 고스트(점선) 위치 계산 후 그리기
+        const ghostY = getGhostY();
+        if (ghostY !== currentY) {
+          drawGhost(ghostY);
+        }
+        // 2) 실제 블록 그리기
+        const shape = currentTetromino[currentRotation];
+        for (let r = 0; r < shape.length; r++) {
+          for (let c = 0; c < shape[r].length; c++) {
+            if (shape[r][c]) {
+              ctx.fillStyle = currentColor;
+              ctx.fillRect((currentX + c) * blockSize, (currentY + r) * blockSize, blockSize, blockSize);
+              ctx.strokeRect((currentX + c) * blockSize, (currentY + r) * blockSize, blockSize, blockSize);
+            }
+          }
+        }
+      }
+    }
+
+    // 고스트 Y값 계산
+    function getGhostY() {
+      let testY = currentY;
+      while (!collision(currentX, testY + 1, currentRotation)) {
+        testY++;
+      }
+      return testY;
+    }
+
+    // 고스트(점선) 그리기
+    function drawGhost(ghostY) {
+      const shape = currentTetromino[currentRotation];
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = 'gray';
+      for (let r = 0; r < shape.length; r++) {
+        for (let c = 0; c < shape[r].length; c++) {
+          if (shape[r][c]) {
+            ctx.strokeRect(
+              (currentX + c) * blockSize,
+              (ghostY + r) * blockSize,
+              blockSize,
+              blockSize
+            );
+          }
+        }
+      }
+      ctx.setLineDash([]);
+    }
+
+    // 충돌 판정
+    function collision(newX, newY, newRotation) {
+      const shape = currentTetromino[newRotation];
+      for (let r = 0; r < shape.length; r++) {
+        for (let c = 0; c < shape[r].length; c++) {
+          if (shape[r][c]) {
+            let boardX = newX + c;
+            let boardY = newY + r;
+            if (
+              boardX < 0 ||
+              boardX >= boardWidth ||
+              boardY >= boardHeight ||
+              (boardY >= 0 && board[boardY][boardX] !== 0)
+            ) {
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    }
+
+    // 블록 고정
+    function lockTetromino() {
+      const shape = currentTetromino[currentRotation];
+      for (let r = 0; r < shape.length; r++) {
+        for (let c = 0; c < shape[r].length; c++) {
+          if (shape[r][c]) {
+            if (currentY + r < 0) {
+              alert('게임 오버! 다시 시작합니다.');
+              for (let i = 0; i < boardHeight; i++) {
+                board[i] = new Array(boardWidth).fill(0);
+              }
+              score = 0;
+              updateScore();
+              break;
+            }
+            board[currentY + r][currentX + c] = currentColor;
+          }
+        }
+      }
+      clearLines();
+    }
+
+    // 라인 검사 및 제거 (애니메이션)
+    function clearLines() {
+      let linesToRemove = [];
+      for (let row = boardHeight - 1; row >= 0; row--) {
+        let isFull = true;
+        for (let col = 0; col < boardWidth; col++) {
+          if (board[row][col] === 0) {
+            isFull = false;
+            break;
+          }
+        }
+        if (isFull) {
+          linesToRemove.push(row);
+        }
+      }
+
+      if (linesToRemove.length > 0) {
+        animateLineRemoval(linesToRemove);
+      } else {
+        drawBoard();
+      }
+    }
+
+    // 라인 깜빡이는 애니메이션
+    function animateLineRemoval(rows) {
+      isAnimatingLineRemoval = true;
+      linesToFlash = rows;
+      let blinkCount = 0;
+      blinkState = false;
+
+      let blinkInterval = setInterval(() => {
+        blinkState = !blinkState;
+        drawBoard();
+        blinkCount++;
+        if (blinkCount > 6) {
+          clearInterval(blinkInterval);
+          removeLines(rows);
+          isAnimatingLineRemoval = false;
+          linesToFlash = [];
+          drawBoard();
+        }
+      }, 100);
+    }
+
+    // 라인 제거
+    function removeLines(rows) {
+      rows.sort((a, b) => a - b);
+      for (let i = 0; i < rows.length; i++) {
+        let row = rows[i];
+        for (let r = row; r > 0; r--) {
+          board[r] = board[r - 1].slice();
+        }
+        board[0] = new Array(boardWidth).fill(0);
+        score += 10;
+      }
+      updateScore();
+    }
+
+    // 점수 표시 업데이트
+    function updateScore() {
+      document.getElementById('score').innerText = score;
+    }
+
+    // 블록 자동 드롭
+    function drop() {
+      if (isAnimatingLineRemoval) {
+        return;
+      }
+      if (!collision(currentX, currentY + 1, currentRotation)) {
+        currentY++;
+      } else {
+        lockTetromino();
+        generateNewTetromino();
+        if (collision(currentX, currentY, currentRotation)) {
+          alert('게임 오버!');
+          for (let i = 0; i < boardHeight; i++) {
+            board[i] = new Array(boardWidth).fill(0);
+          }
+          score = 0;
+          updateScore();
+          generateNewTetromino();
+        }
+      }
+      drawBoard();
+    }
+
+    // 키 입력 처리
+    document.addEventListener('keydown', (e) => {
+      if (isAnimatingLineRemoval) {
+        return;
+      }
+      switch (e.key) {
+        case 'ArrowLeft':
+          if (!collision(currentX - 1, currentY, currentRotation)) {
+            currentX--;
+          }
+          break;
+        case 'ArrowRight':
+          if (!collision(currentX + 1, currentY, currentRotation)) {
+            currentX++;
+          }
+          break;
+        case 'ArrowDown':
+          // 소프트 드롭
+          if (!collision(currentX, currentY + 1, currentRotation)) {
+            currentY++;
+          }
+          break;
+        case ' ':
+          // 하드 드롭
+          while (!collision(currentX, currentY + 1, currentRotation)) {
+            currentY++;
+          }
+          drop();
+          break;
+        case 'ArrowUp':
+          // 회전
+          const newRotation = (currentRotation + 1) % currentTetromino.length;
+          if (!collision(currentX, currentY, newRotation)) {
+            currentRotation = newRotation;
+          }
+          break;
+      }
+      drawBoard();
+    });
+
+    // 초기화
+    generateNewTetromino();
+    drawBoard();
+    updateScore();
+
+    // 일정 간격으로 블록 드롭
+    setInterval(drop, 500);
+  </script>
+</body>
+</html>
